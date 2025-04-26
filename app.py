@@ -11,6 +11,26 @@ import torch
 
 from dia.model import Dia
 
+# ─── MPS work-around: move DAC decode to CPU ──────────────────────
+import torch, types, dia.audio as _a, dia.model as _m
+
+def _cpu_safe_decode(model, audio_codes):
+    cpu = torch.device("cpu")
+    model = model.to(cpu)                          # DAC → CPU
+
+    # keep the ORIGINAL type (tensor vs list) but move data to CPU
+    if torch.is_tensor(audio_codes):
+        codes_cpu = audio_codes.to(cpu)
+    else:                                          # it's already a list-like
+        codes_cpu = [c.to(cpu) for c in audio_codes]
+
+    lat = model.quantizer.from_codes(codes_cpu)    # works for either type
+    return model.decode(lat[0]).cpu()              # run conv1d on CPU
+
+# patch both references
+_a.decode = _cpu_safe_decode
+_m.decode = _cpu_safe_decode
+# ──────────────────────────────────────────────────────────────────
 
 # --- Global Setup ---
 parser = argparse.ArgumentParser(description="Gradio interface for Nari TTS")
